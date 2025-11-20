@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Flow Recorder Panel</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      button {
+        padding: 6px 10px;
+      }
+
+      textarea {
+        min-height: 200px;
+        width: 100%;
+        font-family: monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <button id="startBtn">Start recording</button>
+      <button id="stopBtn">Stop recording</button>
+    </div>
+    <div>
+      <button id="exportJsonBtn">Export JSON</button>
+      <button id="exportMermaidBtn">Export Mermaid</button>
+      <button id="downloadVideoBtn">Download Video</button>
+    </div>
+    <textarea id="output" placeholder="Mermaid output will appear here"></textarea>
+    <script src="panel.js"></script>
+  </body>
+</html>

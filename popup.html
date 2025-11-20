@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Journey Capture Popup</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 12px;
+        width: 260px;
+      }
+
+      button {
+        width: 100%;
+        margin-bottom: 8px;
+        padding: 8px;
+      }
+
+      #status {
+        font-size: 13px;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="startCaptureBtn">Start Video Capture</button>
+    <button id="stopCaptureBtn">Stop Video Capture</button>
+    <button id="downloadCaptureBtn">Download Last Video</button>
+    <p id="status">No capture in progress.</p>
+    <script src="popup.js"></script>
+  </body>
+</html>
