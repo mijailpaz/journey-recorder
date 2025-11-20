@@ -16,6 +16,105 @@
         padding: 6px 10px;
       }
 
+      section {
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      section header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+
+      section header h2 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.9rem;
+        cursor: pointer;
+      }
+
+      .custom-filter textarea {
+        min-height: 80px;
+        width: 100%;
+        font-family: monospace;
+      }
+
+      #presetFilters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+
+      .filter-card {
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .filter-card textarea {
+        min-height: 60px;
+        font-family: monospace;
+        width: 100%;
+      }
+
+      .stats {
+        display: flex;
+        gap: 24px;
+      }
+
+      .stats div {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .event-list {
+        max-height: 220px;
+        overflow: auto;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 8px;
+        font-family: monospace;
+        font-size: 0.85rem;
+      }
+
+      .ignored-breakdown {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 0.85rem;
+        color: #555;
+      }
+
+      .ignored-breakdown span {
+        background: #f5f5f5;
+        border-radius: 999px;
+        padding: 4px 10px;
+      }
+
+      .dedupe-placeholder {
+        font-size: 0.9rem;
+        color: #777;
+        border: 1px dashed #ccc;
+        border-radius: 6px;
+        padding: 8px;
+      }
+
       textarea {
         min-height: 200px;
         width: 100%;
@@ -33,6 +132,42 @@
       <button id="exportMermaidBtn">Export Mermaid</button>
       <button id="downloadVideoBtn">Download Video</button>
     </div>
+    <section id="filtersSection">
+      <header>
+        <h2>Filters</h2>
+        <label class="toggle">
+          <input type="checkbox" id="applyFiltersToggle" checked />
+          <span>Apply filters to exports</span>
+        </label>
+      </header>
+      <div id="presetFilters"></div>
+      <div class="dedupe-placeholder">Deduplication rules preview coming soon.</div>
+      <div class="custom-filter">
+        <label for="customRegexInput">Custom regex filters (one per line)</label>
+        <textarea
+          id="customRegexInput"
+          placeholder="^https://example.com/internal\n\\.woff2$\nmethod:^OPTIONS$"
+        ></textarea>
+      </div>
+    </section>
+    <section id="previewSection">
+      <header>
+        <h2>Preview</h2>
+        <span id="previewNotice">Filtered events will be exported.</span>
+      </header>
+      <div class="stats">
+        <div>
+          <strong>Total events</strong>
+          <span id="totalEventsCount">0</span>
+        </div>
+        <div>
+          <strong>Filtered events</strong>
+          <span id="filteredEventsCount">0</span>
+        </div>
+      </div>
+      <div class="ignored-breakdown" id="ignoredBreakdown"></div>
+      <div class="event-list" id="previewEventList" aria-live="polite"></div>
+    </section>
     <textarea id="output" placeholder="Mermaid output will appear here"></textarea>
     <script src="panel.js"></script>
   </body>
