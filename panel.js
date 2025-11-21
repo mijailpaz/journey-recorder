@@ -3,7 +3,6 @@ const stopBtn = document.getElementById('stopBtn');
 const jsonBtn = document.getElementById('exportJsonBtn');
 const mermaidBtn = document.getElementById('exportMermaidBtn');
 const videoBtn = document.getElementById('downloadVideoBtn');
-const output = document.getElementById('output');
 const applyFiltersToggle = document.getElementById('applyFiltersToggle');
 const presetFiltersContainer = document.getElementById('presetFilters');
 const customRegexInput = document.getElementById('customRegexInput');
@@ -12,6 +11,13 @@ const filteredEventsCount = document.getElementById('filteredEventsCount');
 const previewEventList = document.getElementById('previewEventList');
 const ignoredBreakdownEl = document.getElementById('ignoredBreakdown');
 const previewNotice = document.getElementById('previewNotice');
+const jsonViewer = document.getElementById('jsonViewer');
+const videoSection = document.getElementById('videoSection');
+const analysisSection = document.getElementById('analysisSection');
+const restartFooter = document.getElementById('restartFooter');
+const restartBtn = document.getElementById('restartBtn');
+const statusBadge = document.getElementById('statusBadge');
+const recordingHint = document.getElementById('recordingHint');
 
 const runtimeApi = (typeof chrome !== 'undefined' && (chrome.runtime || chrome.extension)) || null;
 const inspectedTabId = chrome.devtools?.inspectedWindow?.tabId ?? null;
@@ -19,6 +25,16 @@ const inspectedTabId = chrome.devtools?.inspectedWindow?.tabId ?? null;
 let latestTrace = null;
 let currentFilteredEvents = [];
 let currentIgnoredCounts = {};
+let currentFilteredTrace = null;
+
+const RecordingState = {
+  IDLE: 'idle',
+  RECORDING: 'recording',
+  STOPPED: 'stopped'
+};
+
+let recordingState = RecordingState.IDLE;
+let hasDownloadedVideo = false;
 
 const FILTER_GROUPS = [
   {
@@ -98,44 +114,62 @@ function sendRuntimeMessage(message, { expectResponse = false, onResponse } = {}
 }
 
 startBtn.onclick = () => {
+  if (recordingState === RecordingState.RECORDING) return;
+  setRecordingState(RecordingState.RECORDING);
+  clearTraceData();
   sendRuntimeMessage(
     { type: 'startRecording', tabId: inspectedTabId },
     {
       expectResponse: true,
       onResponse: (err) => {
-        if (err) console.warn('Unable to start recording', err.message || err);
-      }
-    }
-  );
-};
-
-stopBtn.onclick = () => {
-  sendRuntimeMessage(
-    { type: 'stopRecording' },
-    {
-      expectResponse: true,
-      onResponse: (err) => {
-        if (err) console.warn('Unable to stop recording', err.message || err);
-        if (!err) {
-          fetchTrace();
+        if (err) {
+          console.warn('Unable to start recording', err.message || err);
+          setRecordingState(RecordingState.IDLE);
+          if (recordingHint) {
+            recordingHint.textContent = 'Failed to start. Please retry.';
+          }
+        } else if (recordingHint) {
+          recordingHint.textContent = 'Recording in progress…';
         }
       }
     }
   );
 };
 
+stopBtn.onclick = () => {
+  if (recordingState !== RecordingState.RECORDING) return;
+  sendRuntimeMessage(
+    { type: 'stopRecording' },
+    {
+      expectResponse: true,
+      onResponse: (err) => {
+        if (err) {
+          console.warn('Unable to stop recording', err.message || err);
+          setRecordingState(RecordingState.IDLE);
+          return;
+        }
+        setRecordingState(RecordingState.STOPPED);
+        fetchTrace();
+      }
+    }
+  );
+};
+
+restartBtn?.addEventListener('click', () => {
+  resetPanelState();
+});
+
 jsonBtn.onclick = () => {
+  const useCached = getTraceForExport(latestTrace);
+  if (useCached) {
+    downloadTraceJson(useCached);
+    return;
+  }
+
   fetchTrace((trace) => {
-    if (!trace) return;
-    const eventsForExport = getEventsForExport(trace);
-    const { videoDataUrl, events: _rawEvents, ...rest } = trace;
-    const payload = {
-      ...rest,
-      events: eventsForExport,
-      videoAvailable: Boolean(videoDataUrl)
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    download(blob, 'trace.json');
+    const payload = getTraceForExport(trace);
+    if (!payload) return;
+    downloadTraceJson(payload);
   });
 };
 
@@ -146,6 +180,7 @@ videoBtn.onclick = () => {
       return;
     }
     download(dataUrlToBlob(trace.videoDataUrl), 'journey.webm');
+    markVideoDownloaded();
   };
 
   if (latestTrace?.videoDataUrl) {
@@ -156,14 +191,25 @@ videoBtn.onclick = () => {
 };
 
 mermaidBtn.onclick = () => {
+  if (latestTrace) {
+    downloadMermaid(getEventsForExport(latestTrace));
+    return;
+  }
+
   fetchTrace((trace) => {
-    if (!trace) return;
-    const eventsForDiagram = getEventsForExport(trace);
-    const mermaid = generateMermaid(eventsForDiagram);
-    output.value = mermaid;
-    download(new Blob([mermaid], { type: 'text/plain' }), 'flow.mmd');
+    downloadMermaid(getEventsForExport(trace));
   });
 };
+
+function downloadTraceJson(payload) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  download(blob, 'trace.json');
+}
+
+function downloadMermaid(events) {
+  const mermaid = generateMermaid(events);
+  download(new Blob([mermaid], { type: 'text/plain' }), 'flow.mmd');
+}
 
 function fetchTrace(callback) {
   sendRuntimeMessage(
@@ -391,9 +437,14 @@ function updatePreview() {
     totalEventsCount.textContent = '0';
     filteredEventsCount.textContent = '0';
     ignoredBreakdownEl.textContent = '';
-    previewEventList.textContent = 'No trace loaded yet.';
+    previewEventList.textContent =
+      recordingState === RecordingState.RECORDING
+        ? 'Recording… events will appear once you stop.'
+        : 'No trace loaded yet.';
     currentFilteredEvents = [];
     currentIgnoredCounts = {};
+    currentFilteredTrace = null;
+    renderJsonViewer(null);
     return;
   }
 
@@ -401,12 +452,14 @@ function updatePreview() {
   const { filteredEvents, ignoredCounts } = applyFiltersToEvents(events);
   currentFilteredEvents = filteredEvents;
   currentIgnoredCounts = ignoredCounts;
+  currentFilteredTrace = buildTracePayload(latestTrace, filteredEvents);
 
   totalEventsCount.textContent = String(events.length);
   filteredEventsCount.textContent = String(filteredEvents.length);
 
   renderIgnoredBreakdown(ignoredCounts);
   renderPreviewEvents(filteredEvents, events.length > 0 ? events[0].ts : 0);
+  renderJsonViewer(currentFilteredTrace);
 }
 
 function renderIgnoredBreakdown(counts) {
@@ -492,21 +545,21 @@ function truncate(text, length) {
   return `${text.slice(0, length - 1)}…`;
 }
 
-function getEventsForExport(trace) {
+function getTraceForExport(trace) {
   if (!trace || !Array.isArray(trace.events)) {
-    return [];
+    return null;
   }
 
-  if (!filterSettings.applyFilters) {
-    return trace.events;
+  if (trace === latestTrace && currentFilteredTrace) {
+    return currentFilteredTrace;
   }
 
-  if (trace === latestTrace && currentFilteredEvents.length) {
-    return currentFilteredEvents;
-  }
+  const events = filterSettings.applyFilters ? applyFiltersToEvents(trace.events).filteredEvents : trace.events;
+  return buildTracePayload(trace, events);
+}
 
-  const { filteredEvents } = applyFiltersToEvents(trace.events);
-  return filteredEvents;
+function getEventsForExport(trace) {
+  return getTraceForExport(trace)?.events ?? [];
 }
 
 function updatePreviewNotice() {
@@ -514,6 +567,113 @@ function updatePreviewNotice() {
   previewNotice.textContent = filterSettings.applyFilters
     ? 'Filtered events will be exported.'
     : 'Filtering disabled — exports use raw events.';
+}
+
+function buildTracePayload(trace, eventsOverride) {
+  if (!trace) return null;
+  const { videoDataUrl, events, ...rest } = trace;
+  return {
+    ...rest,
+    events: Array.isArray(eventsOverride) ? eventsOverride : Array.isArray(events) ? events : [],
+    videoAvailable: Boolean(videoDataUrl)
+  };
+}
+
+function renderJsonViewer(tracePayload) {
+  if (!jsonViewer) return;
+
+  if (!tracePayload) {
+    const emptyMessage =
+      recordingState === RecordingState.RECORDING
+        ? 'Recording… trace will appear once you stop.'
+        : recordingState === RecordingState.STOPPED
+          ? 'Preparing trace…'
+          : 'No trace loaded yet.';
+    jsonViewer.textContent = emptyMessage;
+    return;
+  }
+
+  try {
+    jsonViewer.textContent = JSON.stringify(tracePayload, null, 2);
+  } catch (error) {
+    jsonViewer.textContent = `Unable to render trace: ${error?.message || error}`;
+  }
+}
+
+function clearTraceData() {
+  latestTrace = null;
+  currentFilteredEvents = [];
+  currentFilteredTrace = null;
+  currentIgnoredCounts = {};
+  updatePreview();
+}
+
+function resetPanelState() {
+  clearTraceData();
+  setRecordingState(RecordingState.IDLE);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function setRecordingState(state) {
+  if (state !== RecordingState.STOPPED) {
+    hasDownloadedVideo = false;
+  }
+
+  recordingState = state;
+  updateStatusBadge(state);
+
+  if (startBtn) {
+    const showStart = state === RecordingState.IDLE;
+    startBtn.classList.toggle('hidden', !showStart);
+    startBtn.disabled = !showStart;
+  }
+
+  if (stopBtn) {
+    stopBtn.classList.toggle('hidden', state !== RecordingState.RECORDING);
+  }
+
+  const showVideoGate = state === RecordingState.STOPPED && !hasDownloadedVideo;
+  const showAnalysis = state === RecordingState.STOPPED && hasDownloadedVideo;
+
+  if (videoSection) {
+    videoSection.classList.toggle('hidden', !showVideoGate);
+  }
+
+  if (analysisSection) {
+    analysisSection.classList.toggle('hidden', !showAnalysis);
+  }
+
+  if (restartFooter) {
+    restartFooter.classList.toggle('hidden', !showAnalysis);
+  }
+
+  if (recordingHint) {
+    let hint = 'Start recording to capture a new user journey.';
+    if (state === RecordingState.RECORDING) {
+      hint = 'Stop when you are done capturing interactions.';
+    } else if (state === RecordingState.STOPPED) {
+      hint = hasDownloadedVideo
+        ? 'Review the trace below or start another capture.'
+        : 'Download the video to continue.';
+    }
+    recordingHint.textContent = hint;
+  }
+}
+
+function markVideoDownloaded() {
+  if (recordingState !== RecordingState.STOPPED || hasDownloadedVideo) return;
+  hasDownloadedVideo = true;
+  setRecordingState(recordingState);
+}
+
+function updateStatusBadge(state) {
+  if (!statusBadge) return;
+  const labels = {
+    [RecordingState.IDLE]: 'Idle',
+    [RecordingState.RECORDING]: 'Recording',
+    [RecordingState.STOPPED]: 'Captured'
+  };
+  statusBadge.textContent = labels[state] || state;
 }
 
 function download(blob, filename) {
@@ -568,6 +728,7 @@ function safeUrl(urlString) {
   }
 }
 
+setRecordingState(RecordingState.IDLE);
 initializeFilterUI();
 updatePreview();
 fetchTrace();

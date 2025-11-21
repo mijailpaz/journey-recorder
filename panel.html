@@ -14,6 +14,27 @@
 
       button {
         padding: 6px 10px;
+        border: 1px solid #888;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+      }
+
+      button.primary {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #fff;
+      }
+
+      button.danger {
+        background: #dc2626;
+        border-color: #dc2626;
+        color: #fff;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
 
       section {
@@ -107,6 +128,43 @@
         padding: 4px 10px;
       }
 
+      .json-viewer {
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: #0b1120;
+        color: #e2e8f0;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+        font-size: 0.85rem;
+        padding: 12px;
+        max-height: 320px;
+        overflow: auto;
+        white-space: pre;
+      }
+
+      #analysisSection {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      footer {
+        margin-top: 12px;
+        border-top: 1px solid #ddd;
+        padding-top: 12px;
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
       .dedupe-placeholder {
         font-size: 0.9rem;
         color: #777;
@@ -116,59 +174,91 @@
       }
 
       textarea {
-        min-height: 200px;
+        min-height: 80px;
         width: 100%;
         font-family: monospace;
       }
     </style>
   </head>
   <body>
-    <div>
-      <button id="startBtn">Start recording</button>
-      <button id="stopBtn">Stop recording</button>
-    </div>
-    <div>
-      <button id="exportJsonBtn">Export JSON</button>
-      <button id="exportMermaidBtn">Export Mermaid</button>
-      <button id="downloadVideoBtn">Download Video</button>
-    </div>
-    <section id="filtersSection">
+    <section id="recordingSection">
       <header>
-        <h2>Filters</h2>
-        <label class="toggle">
-          <input type="checkbox" id="applyFiltersToggle" checked />
-          <span>Apply filters to exports</span>
-        </label>
+        <h2>Session controls</h2>
+        <span id="statusBadge">Idle</span>
       </header>
-      <div id="presetFilters"></div>
-      <div class="dedupe-placeholder">Deduplication rules preview coming soon.</div>
-      <div class="custom-filter">
-        <label for="customRegexInput">Custom regex filters (one per line)</label>
-        <textarea
-          id="customRegexInput"
-          placeholder="^https://example.com/internal\n\\.woff2$\nmethod:^OPTIONS$"
-        ></textarea>
+      <div class="actions">
+        <button id="startBtn" class="primary">Start recording</button>
+        <button id="stopBtn" class="danger hidden">Stop recording</button>
+      </div>
+      <p id="recordingHint">Start recording to capture a new user journey.</p>
+    </section>
+
+    <section id="videoSection" class="hidden">
+      <header>
+        <h2>Recording ready</h2>
+      </header>
+      <div class="actions">
+        <button id="downloadVideoBtn" class="primary">Download Video</button>
       </div>
     </section>
-    <section id="previewSection">
-      <header>
-        <h2>Preview</h2>
-        <span id="previewNotice">Filtered events will be exported.</span>
-      </header>
-      <div class="stats">
-        <div>
-          <strong>Total events</strong>
-          <span id="totalEventsCount">0</span>
+
+    <section id="analysisSection" class="hidden">
+      <section id="traceSection">
+        <header>
+          <div>
+            <h2>Trace viewer</h2>
+            <p>Filtered JSON shown below. Exports use the same dataset.</p>
+          </div>
+          <div class="actions">
+            <button id="exportJsonBtn" class="primary">Export JSON</button>
+            <button id="exportMermaidBtn">Export Mermaid</button>
+          </div>
+        </header>
+        <div id="jsonViewer" class="json-viewer" aria-live="polite">No trace loaded yet.</div>
+      </section>
+
+      <section id="filtersSection">
+        <header>
+          <h2>Filters</h2>
+          <label class="toggle">
+            <input type="checkbox" id="applyFiltersToggle" checked />
+            <span>Apply filters to exports</span>
+          </label>
+        </header>
+        <div id="presetFilters"></div>
+        <div class="dedupe-placeholder">Deduplication rules preview coming soon.</div>
+        <div class="custom-filter">
+          <label for="customRegexInput">Custom regex filters (one per line)</label>
+          <textarea
+            id="customRegexInput"
+            placeholder="^https://example.com/internal\n\\.woff2$\nmethod:^OPTIONS$"
+          ></textarea>
         </div>
-        <div>
-          <strong>Filtered events</strong>
-          <span id="filteredEventsCount">0</span>
+      </section>
+
+      <section id="previewSection">
+        <header>
+          <h2>Preview</h2>
+          <span id="previewNotice">Filtered events will be exported.</span>
+        </header>
+        <div class="stats">
+          <div>
+            <strong>Total events</strong>
+            <span id="totalEventsCount">0</span>
+          </div>
+          <div>
+            <strong>Filtered events</strong>
+            <span id="filteredEventsCount">0</span>
+          </div>
         </div>
-      </div>
-      <div class="ignored-breakdown" id="ignoredBreakdown"></div>
-      <div class="event-list" id="previewEventList" aria-live="polite"></div>
+        <div class="ignored-breakdown" id="ignoredBreakdown"></div>
+        <div class="event-list" id="previewEventList" aria-live="polite"></div>
+      </section>
     </section>
-    <textarea id="output" placeholder="Mermaid output will appear here"></textarea>
+
+    <footer id="restartFooter" class="hidden">
+      <button id="restartBtn">Record another session</button>
+    </footer>
     <script src="panel.js"></script>
   </body>
 </html>
