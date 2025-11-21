@@ -7,6 +7,17 @@ let videoDataUrl = null;
 let recordingTabId = null;
 let recordingSourceTabId = null;
 
+function notifyPointerState(enabled, targetTabId = recordingSourceTabId) {
+  if (typeof targetTabId !== 'number') return;
+  chrome.tabs.sendMessage(
+    targetTabId,
+    { type: 'jrPointerToggle', enabled: Boolean(enabled) },
+    () => {
+      void chrome.runtime.lastError;
+    }
+  );
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return;
 
@@ -30,12 +41,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (isRecording) {
       const now = Date.now();
       const incoming = msg.event || {};
-      events.push({
+      const storedEvent = {
+        ...incoming,
         id: eventCounter++,
         ts: typeof incoming.ts === 'number' ? incoming.ts : now,
-        kind: incoming.kind || 'unknown',
-        ...incoming
-      });
+        kind: incoming.kind || 'unknown'
+      };
+      events.push(storedEvent);
+      if (storedEvent.kind === 'click' || storedEvent.kind === 'request') {
+        chrome.runtime.sendMessage({
+          type: 'liveEvent',
+          event: storedEvent
+        });
+      }
     }
     return;
   }
@@ -69,15 +87,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'videoRecorded') {
     videoDataUrl = msg.dataUrl || null;
-  recordingTabId = null;
-  isRecording = false;
+    recordingTabId = null;
+    isRecording = false;
+    notifyPointerState(false);
+    recordingSourceTabId = null;
     return;
   }
 
   if (msg.type === 'recordingError') {
     console.warn('Screen recording error', msg.error);
-  recordingTabId = null;
-  isRecording = false;
+    recordingTabId = null;
+    isRecording = false;
+    notifyPointerState(false);
+    recordingSourceTabId = null;
     return;
   }
 });
@@ -93,12 +115,25 @@ async function startRecording(tabId) {
 
   recordingSourceTabId = typeof tabId === 'number' ? tabId : await getActiveTabId();
 
-  await openRecordingTab();
+  if (typeof recordingSourceTabId === 'number') {
+    notifyPointerState(true, recordingSourceTabId);
+  }
+
+  try {
+    await openRecordingTab();
+  } catch (error) {
+    notifyPointerState(false);
+    recordingSourceTabId = null;
+    isRecording = false;
+    throw error;
+  }
 }
 
 function stopRecording() {
   if (!isRecording) return;
   isRecording = false;
+  notifyPointerState(false);
+  recordingSourceTabId = null;
   if (recordingTabId) {
     chrome.tabs.sendMessage(recordingTabId, { type: 'stopScreenRecording' }, () => {
       void chrome.runtime.lastError;
@@ -153,5 +188,19 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     if (isRecording) {
       isRecording = false;
     }
+  }
+  if (tabId === recordingSourceTabId) {
+    notifyPointerState(false, tabId);
+    recordingSourceTabId = null;
+    if (isRecording) {
+      isRecording = false;
+    }
+  }
+});
+
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (!isRecording || tabId !== recordingSourceTabId) return;
+  if (info.status === 'complete') {
+    notifyPointerState(true, tabId);
   }
 });

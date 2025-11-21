@@ -21,6 +21,14 @@ const recordingHint = document.getElementById('recordingHint');
 const analysisGrid = document.getElementById('analysisGrid');
 const filtersSectionEl = document.getElementById('filtersSection');
 const previewEventList = document.getElementById('previewEventList');
+const liveEventsSection = document.getElementById('liveEventsSection');
+const liveEventsList = document.getElementById('liveEventsList');
+const liveEventsCount = document.getElementById('liveEventsCount');
+const liveNetworkStats = document.getElementById('liveNetworkStats');
+const liveNetworkCount = document.getElementById('liveNetworkCount');
+const liveNetworkStatus = document.getElementById('liveNetworkStatus');
+const liveNetworkProgress = document.getElementById('liveNetworkProgress');
+const liveNetworkProgressFill = document.getElementById('liveNetworkProgressFill');
 const filtersResizeObserver =
   typeof ResizeObserver !== 'undefined' && filtersSectionEl
     ? new ResizeObserver(() => syncColumnHeights())
@@ -44,6 +52,10 @@ const RecordingState = {
 
 let recordingState = RecordingState.IDLE;
 let hasDownloadedVideo = false;
+const MAX_LIVE_EVENTS = 40;
+const LIVE_CLICK_WINDOW_MS = 10000;
+let liveEvents = [];
+let activeClickWindow = null;
 
 const FILTER_GROUPS = [
   {
@@ -547,6 +559,223 @@ function formatEventForPreview(event, baseTs) {
   return `[${event.id ?? '?'}${deltaText}] ${event.kind || 'event'}`;
 }
 
+function handleLiveEventMessage(event) {
+  if (!event) return;
+  if (event.kind === 'click') {
+    handleLiveClickEvent(event);
+  } else if (event.kind === 'request') {
+    handleLiveRequestEvent(event);
+  }
+}
+
+function handleLiveClickEvent(event) {
+  if (recordingState !== RecordingState.RECORDING) return;
+  const normalized = {
+    ...event,
+    ts: typeof event.ts === 'number' ? event.ts : Date.now()
+  };
+  liveEvents.push(normalized);
+  if (liveEvents.length > MAX_LIVE_EVENTS) {
+    liveEvents.shift();
+  }
+  renderLiveEvents();
+  startLiveClickWindow(normalized.ts);
+}
+
+function handleLiveRequestEvent(event) {
+  if (recordingState !== RecordingState.RECORDING) return;
+  if (!activeClickWindow) return;
+  const eventTs = typeof event.ts === 'number' ? event.ts : Date.now();
+  if (eventTs < activeClickWindow.startTs || eventTs > activeClickWindow.endTs) {
+    return;
+  }
+  activeClickWindow.count += 1;
+  updateNetworkStatsUI();
+}
+
+function renderLiveEvents() {
+  if (!liveEventsList || !liveEventsCount) return;
+  if (!liveEvents.length) {
+    liveEventsList.textContent =
+      recordingState === RecordingState.RECORDING
+        ? 'Clicks will appear here once you interact with the page.'
+        : 'Start a recording to watch clicks appear here.';
+    liveEventsCount.textContent = '0';
+    return;
+  }
+
+  liveEventsList.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  liveEvents
+    .slice()
+    .reverse()
+    .forEach((event) => {
+      const row = document.createElement('div');
+      row.className = 'live-event-row';
+
+      const time = document.createElement('span');
+      time.className = 'live-event-time';
+      time.textContent = formatLiveEventTime(event.ts);
+
+      const label = document.createElement('span');
+      label.className = 'live-event-label';
+      label.textContent = formatLiveEventLabel(event);
+
+      row.appendChild(time);
+      row.appendChild(label);
+      fragment.appendChild(row);
+    });
+
+  liveEventsList.appendChild(fragment);
+  liveEventsCount.textContent = String(liveEvents.length);
+}
+
+function clearLiveEvents() {
+  liveEvents = [];
+  renderLiveEvents();
+}
+
+function updateLiveEventsVisibility() {
+  if (!liveEventsSection) return;
+  const shouldShow = recordingState === RecordingState.RECORDING;
+  liveEventsSection.classList.toggle('hidden', !shouldShow);
+  if (shouldShow) {
+    renderLiveEvents();
+  }
+}
+
+function startLiveClickWindow(startTs) {
+  cleanupLiveClickWindowTimers();
+  activeClickWindow = {
+    startTs,
+    endTs: startTs + LIVE_CLICK_WINDOW_MS,
+    count: 0,
+    active: true,
+    timeoutId: null,
+    rafId: null
+  };
+  const remaining = Math.max(0, activeClickWindow.endTs - Date.now());
+  activeClickWindow.timeoutId = setTimeout(() => {
+    finalizeLiveClickWindow();
+  }, remaining);
+  setNetworkProgress(0, 0);
+  refreshLiveNetworkStatusLabel();
+  runLiveClickProgressLoop();
+  updateNetworkStatsUI();
+}
+
+function finalizeLiveClickWindow() {
+  if (!activeClickWindow) return;
+  if (activeClickWindow.timeoutId) {
+    clearTimeout(activeClickWindow.timeoutId);
+    activeClickWindow.timeoutId = null;
+  }
+  activeClickWindow.active = false;
+  setNetworkProgress(100, LIVE_CLICK_WINDOW_MS);
+  refreshLiveNetworkStatusLabel();
+  if (activeClickWindow.rafId && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(activeClickWindow.rafId);
+    activeClickWindow.rafId = null;
+  }
+  updateNetworkStatsUI();
+}
+
+function cleanupLiveClickWindowTimers() {
+  if (!activeClickWindow) return;
+  if (activeClickWindow.timeoutId) {
+    clearTimeout(activeClickWindow.timeoutId);
+    activeClickWindow.timeoutId = null;
+  }
+  if (activeClickWindow.rafId && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(activeClickWindow.rafId);
+    activeClickWindow.rafId = null;
+  }
+}
+
+function runLiveClickProgressLoop() {
+  if (!activeClickWindow || typeof requestAnimationFrame !== 'function') return;
+  const step = () => {
+    if (!activeClickWindow) return;
+    const elapsed = Date.now() - activeClickWindow.startTs;
+    const percent = Math.min(100, (elapsed / LIVE_CLICK_WINDOW_MS) * 100);
+    setNetworkProgress(percent, elapsed);
+    refreshLiveNetworkStatusLabel();
+    if (!activeClickWindow.active && percent >= 100) {
+      activeClickWindow.rafId = null;
+      return;
+    }
+    activeClickWindow.rafId = requestAnimationFrame(step);
+  };
+  activeClickWindow.rafId = requestAnimationFrame(step);
+}
+
+function resetLiveNetworkStats() {
+  cleanupLiveClickWindowTimers();
+  activeClickWindow = null;
+  setNetworkProgress(0, 0);
+  if (liveNetworkCount) {
+    liveNetworkCount.textContent = '0';
+  }
+  refreshLiveNetworkStatusLabel();
+}
+
+function updateNetworkStatsUI() {
+  if (!liveNetworkStats || !liveNetworkCount) return;
+  if (!activeClickWindow) {
+    liveNetworkCount.textContent = '0';
+    refreshLiveNetworkStatusLabel();
+    return;
+  }
+  liveNetworkCount.textContent = String(activeClickWindow.count);
+  refreshLiveNetworkStatusLabel();
+}
+
+function refreshLiveNetworkStatusLabel() {
+  if (!liveNetworkStatus) return;
+  if (!activeClickWindow) {
+    liveNetworkStatus.textContent =
+      recordingState === RecordingState.RECORDING
+        ? 'Click to start tracking network events.'
+        : 'Start recording to track network activity.';
+    return;
+  }
+  if (activeClickWindow.active) {
+    const remaining = Math.max(0, activeClickWindow.endTs - Date.now());
+    liveNetworkStatus.textContent = `${(remaining / 1000).toFixed(1)}s left in window`;
+  } else {
+    liveNetworkStatus.textContent = 'Window complete. Waiting for next click.';
+  }
+}
+
+function setNetworkProgress(percent, elapsedOverrideMs) {
+  if (!liveNetworkProgressFill) return;
+  const clamped = Math.max(0, Math.min(100, percent ?? 0));
+  liveNetworkProgressFill.style.width = `${clamped}%`;
+  if (liveNetworkProgress) {
+    const elapsedMs =
+      typeof elapsedOverrideMs === 'number'
+        ? elapsedOverrideMs
+        : activeClickWindow
+          ? Math.min(LIVE_CLICK_WINDOW_MS, Math.max(0, Date.now() - activeClickWindow.startTs))
+          : 0;
+    liveNetworkProgress.setAttribute('aria-valuenow', (elapsedMs / 1000).toFixed(1));
+  }
+}
+
+function formatLiveEventTime(ts) {
+  if (typeof ts !== 'number' || Number.isNaN(ts)) return '--:--:--';
+  const date = new Date(ts);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+function formatLiveEventLabel(event) {
+  const label = (event?.text || event?.selector || 'click').replace(/\s+/g, ' ').trim();
+  return truncate(label, 100);
+}
+
 function normalizePath(pathname) {
   if (!pathname) return '/';
   return pathname.replace(/\/+/g, '/');
@@ -678,6 +907,13 @@ function setRecordingState(state) {
     }
     recordingHint.textContent = hint;
   }
+
+  updateLiveEventsVisibility();
+  if (state !== RecordingState.RECORDING) {
+    clearLiveEvents();
+    resetLiveNetworkStats();
+  }
+  updateNetworkStatsUI();
 }
 
 function markVideoDownloaded() {
@@ -770,6 +1006,14 @@ function safeUrl(urlString) {
   } catch (_) {
     return null;
   }
+}
+
+if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type === 'liveEvent') {
+      handleLiveEventMessage(msg.event);
+    }
+  });
 }
 
 setRecordingState(RecordingState.IDLE);
