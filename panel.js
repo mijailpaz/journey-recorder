@@ -7,6 +7,7 @@ const layoutToggleBtn = document.getElementById('layoutToggleBtn');
 const applyFiltersToggle = document.getElementById('applyFiltersToggle');
 const presetFiltersContainer = document.getElementById('presetFilters');
 const customRegexInput = document.getElementById('customRegexInput');
+const customFilterCountEl = document.getElementById('customFilterCount');
 const totalEventsCount = document.getElementById('totalEventsCount');
 const filteredEventsCount = document.getElementById('filteredEventsCount');
 const ignoredBreakdownEl = document.getElementById('ignoredBreakdown');
@@ -29,7 +30,11 @@ const liveNetworkCount = document.getElementById('liveNetworkCount');
 const liveNetworkStatus = document.getElementById('liveNetworkStatus');
 const liveNetworkProgress = document.getElementById('liveNetworkProgress');
 const liveNetworkProgressFill = document.getElementById('liveNetworkProgressFill');
+const clickSelectionContainer = document.getElementById('clickSelectionContainer');
+const clickSelectionList = document.getElementById('clickSelectionList');
+const clickSelectionCount = document.getElementById('clickSelectionCount');
 const pointerOverlayToggle = document.getElementById('pointerOverlayToggle');
+const filterCountElements = new Map();
 const filtersResizeObserver =
   typeof ResizeObserver !== 'undefined' && filtersSectionEl
     ? new ResizeObserver(() => syncColumnHeights())
@@ -59,6 +64,8 @@ let liveEvents = [];
 let activeClickWindow = null;
 const POINTER_PREF_KEY = 'jrPointerOverlayEnabled';
 let pointerOverlayEnabled = true;
+const clickSelectionState = new Map();
+let hasClickSelectionRows = false;
 
 try {
   const storedPref = window.localStorage?.getItem(POINTER_PREF_KEY);
@@ -315,6 +322,7 @@ function renderPresetFilters() {
   if (!presetFiltersContainer) return;
 
   presetFiltersContainer.innerHTML = '';
+  filterCountElements.clear();
 
   filterSettings.groups.forEach((group) => {
     const card = document.createElement('div');
@@ -351,10 +359,17 @@ function renderPresetFilters() {
     const helper = document.createElement('small');
     helper.textContent = 'Prefix with method: or status: to match method/status.';
 
+    const count = document.createElement('div');
+    count.className = 'filter-count';
+    count.dataset.filterId = group.id;
+    count.textContent = 'Filtered: 0';
+    filterCountElements.set(group.id, count);
+
     card.appendChild(headerLabel);
     card.appendChild(desc);
     card.appendChild(textarea);
     card.appendChild(helper);
+    card.appendChild(count);
 
     presetFiltersContainer.appendChild(card);
   });
@@ -505,6 +520,9 @@ function updatePreview() {
     currentIgnoredCounts = {};
     currentFilteredTrace = null;
     renderJsonViewer(null);
+    updateFilterCounts({});
+    syncClickSelectionState([]);
+    renderClickSelection([]);
     syncColumnHeights();
     return;
   }
@@ -519,8 +537,11 @@ function updatePreview() {
   filteredEventsCount.textContent = String(filteredEvents.length);
 
   renderIgnoredBreakdown(ignoredCounts);
+  updateFilterCounts(ignoredCounts);
   renderPreviewEvents(filteredEvents, events.length > 0 ? events[0].ts : 0);
   renderJsonViewer(currentFilteredTrace);
+  syncClickSelectionState(currentFilteredEvents);
+  renderClickSelection(currentFilteredEvents);
   syncColumnHeights();
 }
 
@@ -542,6 +563,19 @@ function renderIgnoredBreakdown(counts) {
     chip.textContent = `${getGroupLabel(groupId)}: ${count}`;
     ignoredBreakdownEl.appendChild(chip);
   });
+}
+
+function updateFilterCounts(counts) {
+  filterSettings.groups.forEach((group) => {
+    const el = filterCountElements.get(group.id);
+    if (!el) return;
+    const value = counts[group.id] || 0;
+    el.textContent = `Filtered: ${value}`;
+  });
+  if (customFilterCountEl) {
+    const customCount = counts.custom || 0;
+    customFilterCountEl.textContent = `Filtered: ${customCount}`;
+  }
 }
 
 function getGroupLabel(groupId) {
@@ -658,6 +692,286 @@ function renderLiveEvents() {
 
   liveEventsList.appendChild(fragment);
   liveEventsCount.textContent = String(liveEvents.length);
+}
+
+function syncClickSelectionState(events) {
+  if (!Array.isArray(events) || !events.length) {
+    clickSelectionState.clear();
+    return;
+  }
+
+  const nextKeys = new Set();
+  events.forEach((event) => {
+    if (!event || event.kind !== 'click') return;
+    const key = getClickEventKey(event);
+    if (!key) return;
+    nextKeys.add(key);
+    const existing = clickSelectionState.get(key);
+    const includeValue =
+      event.include !== undefined
+        ? event.include !== false
+        : existing?.include ?? true;
+    const labelValue =
+      typeof event.label === 'string' && event.label.trim().length
+        ? event.label.trim()
+        : existing?.label ?? getDefaultClickLabel(event);
+    clickSelectionState.set(key, { include: includeValue, label: labelValue });
+    event.include = includeValue;
+    event.label = labelValue;
+  });
+
+  Array.from(clickSelectionState.keys()).forEach((key) => {
+    if (!nextKeys.has(key)) {
+      clickSelectionState.delete(key);
+    }
+  });
+}
+
+function renderClickSelection(events) {
+  if (!clickSelectionList || !clickSelectionCount) return;
+
+  const clickEvents = Array.isArray(events)
+    ? events.filter((event) => event?.kind === 'click')
+    : [];
+  hasClickSelectionRows = clickEvents.length > 0;
+  clickSelectionContainer?.classList.toggle('hidden', !hasClickSelectionRows);
+
+  if (!hasClickSelectionRows) {
+    clickSelectionList.textContent = latestTrace
+      ? 'No click events remain after filtering.'
+      : 'Load a trace to edit click metadata.';
+    clickSelectionCount.textContent = '0';
+    applyClickCustomizationsToJson();
+    return;
+  }
+
+  clickSelectionList.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+
+  clickEvents.forEach((event) => {
+    const key = getClickEventKey(event);
+    const state = key ? clickSelectionState.get(key) : null;
+    const row = document.createElement('div');
+    row.className = 'click-selection-row';
+
+    const meta = document.createElement('div');
+    meta.className = 'click-selection-meta';
+    meta.textContent = formatClickSelectionMeta(event);
+    row.appendChild(meta);
+
+    const controls = document.createElement('div');
+    controls.className = 'click-selection-controls';
+
+    const includeLabel = document.createElement('label');
+    includeLabel.className = 'click-selection-include';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = state?.include !== false;
+    checkbox.addEventListener('change', () => {
+      const entry = key ? clickSelectionState.get(key) : null;
+      const checked = checkbox.checked;
+      if (entry) {
+        entry.include = checked;
+      } else if (key) {
+        clickSelectionState.set(key, { include: checked, label: getDefaultClickLabel(event) });
+      }
+      event.include = checked;
+      applyClickCustomizationsToJson();
+    });
+
+    const includeSpan = document.createElement('span');
+    includeSpan.textContent = 'Include';
+    includeLabel.appendChild(checkbox);
+    includeLabel.appendChild(includeSpan);
+    controls.appendChild(includeLabel);
+
+    const labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.className = 'click-selection-input';
+    labelInput.value = state?.label ?? getDefaultClickLabel(event);
+    labelInput.placeholder = 'Click label';
+    labelInput.addEventListener('input', () => {
+      const value = labelInput.value.trim();
+      const entry = key ? clickSelectionState.get(key) : null;
+      const nextValue = value.length ? value : getDefaultClickLabel(event);
+      if (entry) {
+        entry.label = nextValue;
+      } else if (key) {
+        clickSelectionState.set(key, { include: checkbox.checked, label: nextValue });
+      }
+      event.label = nextValue;
+      applyClickCustomizationsToJson();
+    });
+    controls.appendChild(labelInput);
+
+    row.appendChild(controls);
+    fragment.appendChild(row);
+  });
+
+  clickSelectionList.appendChild(fragment);
+  clickSelectionCount.textContent = String(clickEvents.length);
+  applyClickCustomizationsToJson();
+}
+
+function applyClickCustomizationsToJson() {
+  if (!latestTrace || !currentFilteredTrace || !Array.isArray(currentFilteredEvents)) {
+    return;
+  }
+
+  const customizedEvents = buildCustomizedEventList(currentFilteredEvents);
+  currentFilteredTrace = buildTracePayload(latestTrace, customizedEvents);
+  renderJsonViewer(currentFilteredTrace);
+}
+
+function buildCustomizedEventList(events) {
+  if (!Array.isArray(events)) return [];
+  const customized = [];
+  events.forEach((event) => {
+    if (!event) return;
+    if (event.kind === 'click' && event.include === false) {
+      return;
+    }
+    if (event.kind === 'click' && typeof event.label === 'string') {
+      customized.push({ ...event, label: event.label });
+      return;
+    }
+    customized.push(event);
+  });
+  return customized;
+}
+
+function getClickEventKey(event) {
+  if (!event) return null;
+  if (event.id != null) {
+    return `id:${event.id}`;
+  }
+  const ts =
+    typeof event.ts === 'number' && !Number.isNaN(event.ts)
+      ? event.ts
+      : Date.now();
+  const source = (event.selector || event.text || event.label || 'click')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `ts:${ts}:${source}`;
+}
+
+function getDefaultClickLabel(event) {
+  const base = (event?.text || event?.selector || event?.label || 'Click')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return base || 'Click';
+}
+
+function getClickLabelForMermaid(event) {
+  const explicit = typeof event?.label === 'string' ? event.label.trim() : '';
+  if (explicit) {
+    return explicit;
+  }
+  return getDefaultClickLabel(event);
+}
+
+function formatClickSelectionMeta(event) {
+  const parts = [];
+  if (event?.id != null) {
+    parts.push(`#${event.id}`);
+  }
+  if (typeof event?.ts === 'number' && !Number.isNaN(event.ts)) {
+    parts.push(formatLiveEventTime(event.ts));
+  }
+  const source = (event?.selector || event?.text || event?.label || 'click')
+    .replace(/\s+/g, ' ')
+    .trim();
+  parts.push(truncate(source, 80));
+  return parts.join(' · ');
+}
+
+function formatRequestForMermaid(event) {
+  if (!event) return null;
+  const method = event.method || 'GET';
+  const urlString = event.url || '';
+
+  if (isDataUrl(urlString)) {
+    const label = summarizeDataUrl(urlString);
+    return {
+      host: 'embedded_asset',
+      description: `${method} ${label}`,
+      skipResponse: true
+    };
+  }
+
+  const url = safeUrl(urlString);
+  if (!url) {
+    return {
+      host: 'server',
+      description: `${method} ${truncate(urlString, 80)}`
+    };
+  }
+
+  const host = normalizeHost(url.host);
+  const isTelemetry = isTelemetryRequest(url);
+  const pathDescription = formatPathWithParams(url, { isTelemetry });
+  return {
+    host,
+    description: `${method} ${pathDescription}`,
+    skipResponse: false
+  };
+}
+
+function isDataUrl(url) {
+  return typeof url === 'string' && url.startsWith('data:');
+}
+
+function summarizeDataUrl(url) {
+  const match = /^data:([^;,]+)/.exec(url);
+  const mime = match ? match[1] : 'embedded asset';
+  return mime.length > 40 ? `${mime.slice(0, 39)}…` : `data:${mime}`;
+}
+
+function normalizeHost(host) {
+  if (!host) return 'server';
+  return host.replace(/^www\./i, '');
+}
+
+function formatPathWithParams(url, { isTelemetry = false } = {}) {
+  const pathname = normalizePath(url.pathname || '/');
+  const summary = summarizeQueryParams(url);
+  const combined = summary ? `${pathname}?${summary}` : pathname;
+  const label = isTelemetry ? `Beacon ${combined}` : combined;
+  return truncate(label, 140);
+}
+
+function summarizeQueryParams(url) {
+  if (!url.search || !url.searchParams) {
+    return '';
+  }
+  const params = [];
+  url.searchParams.forEach((value, key) => {
+    params.push([key, value]);
+  });
+  if (!params.length) {
+    return '';
+  }
+  const maxPairs = 2;
+  const parts = params.slice(0, maxPairs).map(([key, value]) => {
+    const sanitizedValue = value.length > 40 ? `${value.slice(0, 39)}…` : value;
+    return `${key}=${sanitizedValue}`;
+  });
+  if (params.length > maxPairs) {
+    parts.push('…');
+  }
+  return parts.join('&');
+}
+
+function isTelemetryRequest(url) {
+  const host = (url.host || '').toLowerCase();
+  const path = (url.pathname || '').toLowerCase();
+  if (!host && !path) return false;
+  const TELEMETRY_HOST_PATTERNS = ['online-metrix', 'doubleclick', 'pixel'];
+  const TELEMETRY_PATH_PATTERNS = ['pixel', 'clear', 'beacon', 'collect'];
+  const hostMatch = TELEMETRY_HOST_PATTERNS.some((pattern) => host.includes(pattern));
+  const pathMatch = TELEMETRY_PATH_PATTERNS.some((pattern) => path.includes(pattern));
+  return hostMatch || pathMatch;
 }
 
 function clearLiveEvents() {
@@ -1005,24 +1319,49 @@ function dataUrlToBlob(dataUrl) {
 
 function generateMermaid(events) {
   const lines = ['sequenceDiagram', '  autonumber'];
+  if (!Array.isArray(events) || !events.length) {
+    lines.push('  Note over User,WebApp: No events recorded');
+    return lines.join('\n');
+  }
+
+  let hasOutput = false;
+  let hasActiveClick = false;
+
   events.forEach((event) => {
     if (event.kind === 'click') {
-      const label = event.text || event.selector || 'click';
+      const label = getClickLabelForMermaid(event);
       lines.push(`  User->>WebApp: Click "${sanitize(label)}"`);
-    } else if (event.kind === 'request') {
-      const url = safeUrl(event.url);
-      const host = url ? url.host : 'server';
-      const path = url ? url.pathname + url.search : event.url;
-      const method = event.method || 'GET';
-      const status = event.status || 'unknown';
-      const statusText = event.statusText || '';
-      lines.push(`  WebApp->>${host}: ${method} ${path}`);
-      lines.push(`  ${host}-->>WebApp: ${status} ${statusText}`);
+      hasOutput = true;
+      hasActiveClick = true;
+      return;
+    }
+
+    if (event.kind === 'request') {
+      if (!hasActiveClick) {
+        return;
+      }
+      const requestLine = formatRequestForMermaid(event);
+      if (!requestLine) {
+        return;
+      }
+      lines.push(`  WebApp->>${requestLine.host}: ${requestLine.description}`);
+      if (!requestLine.skipResponse) {
+        const status = event.status || 'unknown';
+        const statusText = (event.statusText || '').trim();
+        lines.push(
+          `  ${requestLine.host}-->>WebApp: ${status}${
+            statusText ? ` ${statusText}` : ''
+          }`
+        );
+      }
+      hasOutput = true;
     }
   });
-  if (lines.length === 2) {
-    lines.push('  Note over User,WebApp: No events recorded');
+
+  if (!hasOutput) {
+    lines.push('  Note over User,WebApp: No click-driven events recorded');
   }
+
   return lines.join('\n');
 }
 

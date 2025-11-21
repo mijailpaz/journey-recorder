@@ -98,6 +98,15 @@
         width: 100%;
       }
 
+      .filter-count {
+        font-size: 0.8rem;
+        color: #475569;
+        background: #f1f5f9;
+        border-radius: 4px;
+        padding: 4px 6px;
+        align-self: flex-start;
+      }
+
       .stats {
         display: flex;
         gap: 24px;
@@ -284,6 +293,89 @@
         color: #475569;
       }
 
+      .click-selection {
+        border-top: 1px solid rgba(148, 163, 184, 0.35);
+        padding-top: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .click-selection header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .click-selection header h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        color: #0f172a;
+      }
+
+      .click-selection-count {
+        font-size: 0.85rem;
+        color: #475569;
+      }
+
+      .click-selection-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-height: 220px;
+        overflow: auto;
+        border: 1px dashed #cbd5f5;
+        border-radius: 4px;
+        padding: 8px;
+        background: #fff;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+        font-size: 0.85rem;
+      }
+
+      .click-selection-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+      }
+
+      .click-selection-row:last-child {
+        border-bottom: none;
+        padding-bottom: 0;
+      }
+
+      .click-selection-meta {
+        color: #475569;
+        font-size: 0.8rem;
+      }
+
+      .click-selection-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .click-selection-include {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.85rem;
+        color: #0f172a;
+      }
+
+      .click-selection-input {
+        flex: 1;
+        min-width: 160px;
+        border: 1px solid #cbd5f5;
+        border-radius: 4px;
+        padding: 4px 6px;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+        font-size: 0.9rem;
+      }
+
       footer {
         margin-top: 12px;
         border-top: 1px solid #ddd;
@@ -432,6 +524,16 @@
                 id="customRegexInput"
                 placeholder="^https://example.com/internal\n\\.woff2$\nmethod:^OPTIONS$"
               ></textarea>
+              <div class="filter-count" id="customFilterCount">Filtered: 0</div>
+            </div>
+            <div class="click-selection hidden" id="clickSelectionContainer">
+              <header>
+                <h3>Click customization</h3>
+                <span class="click-selection-count" id="clickSelectionCount">0</span>
+              </header>
+              <div id="clickSelectionList" class="click-selection-list">
+                Load a trace to edit click metadata.
+              </div>
             </div>
           </section>
         </div>
