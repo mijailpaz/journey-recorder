@@ -9,7 +9,6 @@ const presetFiltersContainer = document.getElementById('presetFilters');
 const customRegexInput = document.getElementById('customRegexInput');
 const totalEventsCount = document.getElementById('totalEventsCount');
 const filteredEventsCount = document.getElementById('filteredEventsCount');
-const previewEventList = document.getElementById('previewEventList');
 const ignoredBreakdownEl = document.getElementById('ignoredBreakdown');
 const previewNotice = document.getElementById('previewNotice');
 const jsonViewer = document.getElementById('jsonViewer');
@@ -20,6 +19,14 @@ const restartBtn = document.getElementById('restartBtn');
 const statusBadge = document.getElementById('statusBadge');
 const recordingHint = document.getElementById('recordingHint');
 const analysisGrid = document.getElementById('analysisGrid');
+const filtersSectionEl = document.getElementById('filtersSection');
+const previewEventList = document.getElementById('previewEventList');
+const filtersResizeObserver =
+  typeof ResizeObserver !== 'undefined' && filtersSectionEl
+    ? new ResizeObserver(() => syncColumnHeights())
+    : null;
+filtersResizeObserver?.observe(filtersSectionEl);
+window.addEventListener('resize', () => syncColumnHeights());
 
 const runtimeApi = (typeof chrome !== 'undefined' && (chrome.runtime || chrome.extension)) || null;
 const inspectedTabId = chrome.devtools?.inspectedWindow?.tabId ?? null;
@@ -165,6 +172,7 @@ layoutToggleBtn?.addEventListener('click', () => {
   if (!analysisGrid) return;
   const twoColumn = analysisGrid.classList.toggle('two-column');
   layoutToggleBtn.textContent = twoColumn ? 'Switch to single-column' : 'Switch to 2-column layout';
+  syncColumnHeights();
 });
 
 jsonBtn.onclick = () => {
@@ -437,7 +445,7 @@ function getEventFieldByTarget(event, target) {
 }
 
 function updatePreview() {
-  if (!totalEventsCount || !filteredEventsCount || !previewEventList || !ignoredBreakdownEl) {
+  if (!totalEventsCount || !filteredEventsCount || !ignoredBreakdownEl) {
     return;
   }
 
@@ -445,14 +453,17 @@ function updatePreview() {
     totalEventsCount.textContent = '0';
     filteredEventsCount.textContent = '0';
     ignoredBreakdownEl.textContent = '';
-    previewEventList.textContent =
-      recordingState === RecordingState.RECORDING
-        ? 'Recording… events will appear once you stop.'
-        : 'No trace loaded yet.';
+    if (previewEventList) {
+      previewEventList.textContent =
+        recordingState === RecordingState.RECORDING
+          ? 'Recording… events will appear once you stop.'
+          : 'No trace loaded yet.';
+    }
     currentFilteredEvents = [];
     currentIgnoredCounts = {};
     currentFilteredTrace = null;
     renderJsonViewer(null);
+    syncColumnHeights();
     return;
   }
 
@@ -468,6 +479,7 @@ function updatePreview() {
   renderIgnoredBreakdown(ignoredCounts);
   renderPreviewEvents(filteredEvents, events.length > 0 ? events[0].ts : 0);
   renderJsonViewer(currentFilteredTrace);
+  syncColumnHeights();
 }
 
 function renderIgnoredBreakdown(counts) {
@@ -682,6 +694,30 @@ function updateStatusBadge(state) {
     [RecordingState.STOPPED]: 'Captured'
   };
   statusBadge.textContent = labels[state] || state;
+}
+
+function syncColumnHeights() {
+  if (!analysisGrid) return;
+  if (!analysisGrid.classList.contains('two-column')) {
+    analysisGrid.style.removeProperty('--filters-height');
+    if (jsonViewer) {
+      jsonViewer.style.removeProperty('max-height');
+    }
+    return;
+  }
+
+  const filtersHeight = filtersSectionEl?.offsetHeight ?? null;
+  if (filtersHeight) {
+    analysisGrid.style.setProperty('--filters-height', `${filtersHeight}px`);
+    if (jsonViewer) {
+      jsonViewer.style.maxHeight = `${filtersHeight}px`;
+    }
+  } else {
+    analysisGrid.style.removeProperty('--filters-height');
+    if (jsonViewer) {
+      jsonViewer.style.removeProperty('max-height');
+    }
+  }
 }
 
 function download(blob, filename) {

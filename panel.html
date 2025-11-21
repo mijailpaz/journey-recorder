@@ -159,28 +159,30 @@
         align-items: stretch;
       }
 
-      .analysis-grid.two-column #traceSection {
-        min-height: calc(100vh - 240px);
+      .analysis-grid.two-column #traceSection,
+      .analysis-grid.two-column .sidebar-column {
+        min-height: 0;
+        height: 100%;
       }
 
       .analysis-grid.two-column #jsonViewer {
-        max-height: none;
-        height: 100%;
+        max-height: var(--filters-height, none);
+        flex: 1;
+        min-height: 0;
       }
 
       .analysis-grid.two-column .sidebar-column {
         display: flex;
         flex-direction: column;
         gap: 16px;
-        max-height: calc(100vh - 240px);
         min-width: 0;
       }
 
       .analysis-grid.two-column #filtersSection,
       .analysis-grid.two-column #previewSection {
-        height: 100%;
-        flex: 1;
-        overflow: auto;
+        height: auto;
+        flex: unset;
+        overflow: visible;
       }
 
       .actions {
@@ -275,11 +277,22 @@
               <h2>Trace viewer</h2>
               <p>Filtered JSON shown below. Exports use the same dataset.</p>
             </div>
+            <div class="stats trace-stats">
+              <div>
+                <strong>Total events</strong>
+                <span id="totalEventsCount">0</span>
+              </div>
+              <div>
+                <strong>Filtered events</strong>
+                <span id="filteredEventsCount">0</span>
+              </div>
+              <div class="ignored-breakdown" id="ignoredBreakdown"></div>
+            </div>
           </header>
           <div id="jsonViewer" class="json-viewer" aria-live="polite">No trace loaded yet.</div>
         </section>
 
-        <div class="sidebar-column">
+        <div class="sidebar-column" id="sidebarColumn">
           <section id="filtersSection">
             <header>
               <h2>Filters</h2>
@@ -297,25 +310,6 @@
                 placeholder="^https://example.com/internal\n\\.woff2$\nmethod:^OPTIONS$"
               ></textarea>
             </div>
-          </section>
-
-          <section id="previewSection">
-            <header>
-              <h2>Preview</h2>
-              <span id="previewNotice">Filtered events will be exported.</span>
-            </header>
-            <div class="stats">
-              <div>
-                <strong>Total events</strong>
-                <span id="totalEventsCount">0</span>
-              </div>
-              <div>
-                <strong>Filtered events</strong>
-                <span id="filteredEventsCount">0</span>
-              </div>
-            </div>
-            <div class="ignored-breakdown" id="ignoredBreakdown"></div>
-            <div class="event-list" id="previewEventList" aria-live="polite"></div>
           </section>
         </div>
       </div>
