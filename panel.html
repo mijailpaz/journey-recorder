@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <title>Flow Recorder Panel</title>
     <style>
+      * {
+        box-sizing: border-box;
+      }
+
       body {
         font-family: sans-serif;
         padding: 12px;
@@ -44,6 +48,7 @@
         display: flex;
         flex-direction: column;
         gap: 12px;
+        min-width: 0;
       }
 
       section header {
@@ -147,6 +152,37 @@
         gap: 16px;
       }
 
+      .analysis-grid.two-column {
+        display: grid;
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+        gap: 16px;
+        align-items: stretch;
+      }
+
+      .analysis-grid.two-column #traceSection {
+        min-height: calc(100vh - 240px);
+      }
+
+      .analysis-grid.two-column #jsonViewer {
+        max-height: none;
+        height: 100%;
+      }
+
+      .analysis-grid.two-column .sidebar-column {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-height: calc(100vh - 240px);
+        min-width: 0;
+      }
+
+      .analysis-grid.two-column #filtersSection,
+      .analysis-grid.two-column #previewSection {
+        height: 100%;
+        flex: 1;
+        overflow: auto;
+      }
+
       .actions {
         display: flex;
         gap: 8px;
@@ -171,6 +207,19 @@
         border: 1px dashed #ccc;
         border-radius: 6px;
         padding: 8px;
+      }
+
+      .tips-card {
+        border-left: 4px solid #2563eb;
+        background: #f7fafc;
+        color: #1f2937;
+        font-size: 0.9rem;
+        line-height: 1.4;
+      }
+
+      .tips-card ul {
+        margin: 0;
+        padding-left: 18px;
       }
 
       textarea {
@@ -203,61 +252,81 @@
     </section>
 
     <section id="analysisSection" class="hidden">
-      <section id="traceSection">
+      <section class="tips-card" id="tipsSection">
         <header>
-          <div>
-            <h2>Trace viewer</h2>
-            <p>Filtered JSON shown below. Exports use the same dataset.</p>
-          </div>
+          <h2>Edition tips</h2>
           <div class="actions">
-            <button id="exportJsonBtn" class="primary">Export JSON</button>
-            <button id="exportMermaidBtn">Export Mermaid</button>
+            <button id="layoutToggleBtn">Switch to 2-column layout</button>
           </div>
         </header>
-        <div id="jsonViewer" class="json-viewer" aria-live="polite">No trace loaded yet.</div>
+        <p>
+          For the best editing experience, undock DevTools into a separate window (⋮ →
+          <em>Dock side → Undock</em>) so the trace viewer gets the maximum space.
+        </p>
+        <ul>
+          <li>Full-width trace makes JSON selection easier.</li>
+          <li>Use the button above to split trace vs filters when you have a wide display.</li>
+        </ul>
       </section>
+      <div id="analysisGrid" class="analysis-grid">
+        <section id="traceSection">
+          <header>
+            <div>
+              <h2>Trace viewer</h2>
+              <p>Filtered JSON shown below. Exports use the same dataset.</p>
+            </div>
+          </header>
+          <div id="jsonViewer" class="json-viewer" aria-live="polite">No trace loaded yet.</div>
+        </section>
 
-      <section id="filtersSection">
-        <header>
-          <h2>Filters</h2>
-          <label class="toggle">
-            <input type="checkbox" id="applyFiltersToggle" checked />
-            <span>Apply filters to exports</span>
-          </label>
-        </header>
-        <div id="presetFilters"></div>
-        <div class="dedupe-placeholder">Deduplication rules preview coming soon.</div>
-        <div class="custom-filter">
-          <label for="customRegexInput">Custom regex filters (one per line)</label>
-          <textarea
-            id="customRegexInput"
-            placeholder="^https://example.com/internal\n\\.woff2$\nmethod:^OPTIONS$"
-          ></textarea>
-        </div>
-      </section>
+        <div class="sidebar-column">
+          <section id="filtersSection">
+            <header>
+              <h2>Filters</h2>
+              <label class="toggle">
+                <input type="checkbox" id="applyFiltersToggle" checked />
+                <span>Apply filters to exports</span>
+              </label>
+            </header>
+            <div id="presetFilters"></div>
+            <div class="dedupe-placeholder">Deduplication rules preview coming soon.</div>
+            <div class="custom-filter">
+              <label for="customRegexInput">Custom regex filters (one per line)</label>
+              <textarea
+                id="customRegexInput"
+                placeholder="^https://example.com/internal\n\\.woff2$\nmethod:^OPTIONS$"
+              ></textarea>
+            </div>
+          </section>
 
-      <section id="previewSection">
-        <header>
-          <h2>Preview</h2>
-          <span id="previewNotice">Filtered events will be exported.</span>
-        </header>
-        <div class="stats">
-          <div>
-            <strong>Total events</strong>
-            <span id="totalEventsCount">0</span>
-          </div>
-          <div>
-            <strong>Filtered events</strong>
-            <span id="filteredEventsCount">0</span>
-          </div>
+          <section id="previewSection">
+            <header>
+              <h2>Preview</h2>
+              <span id="previewNotice">Filtered events will be exported.</span>
+            </header>
+            <div class="stats">
+              <div>
+                <strong>Total events</strong>
+                <span id="totalEventsCount">0</span>
+              </div>
+              <div>
+                <strong>Filtered events</strong>
+                <span id="filteredEventsCount">0</span>
+              </div>
+            </div>
+            <div class="ignored-breakdown" id="ignoredBreakdown"></div>
+            <div class="event-list" id="previewEventList" aria-live="polite"></div>
+          </section>
         </div>
-        <div class="ignored-breakdown" id="ignoredBreakdown"></div>
-        <div class="event-list" id="previewEventList" aria-live="polite"></div>
-      </section>
+      </div>
     </section>
 
     <footer id="restartFooter" class="hidden">
-      <button id="restartBtn">Record another session</button>
+      <div class="actions">
+        <button id="restartBtn">Record another session</button>
+        <button id="exportJsonBtn" class="primary">Export JSON</button>
+        <button id="exportMermaidBtn">Export Mermaid</button>
+      </div>
     </footer>
     <script src="panel.js"></script>
   </body>

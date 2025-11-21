@@ -3,6 +3,7 @@ const stopBtn = document.getElementById('stopBtn');
 const jsonBtn = document.getElementById('exportJsonBtn');
 const mermaidBtn = document.getElementById('exportMermaidBtn');
 const videoBtn = document.getElementById('downloadVideoBtn');
+const layoutToggleBtn = document.getElementById('layoutToggleBtn');
 const applyFiltersToggle = document.getElementById('applyFiltersToggle');
 const presetFiltersContainer = document.getElementById('presetFilters');
 const customRegexInput = document.getElementById('customRegexInput');
@@ -18,6 +19,7 @@ const restartFooter = document.getElementById('restartFooter');
 const restartBtn = document.getElementById('restartBtn');
 const statusBadge = document.getElementById('statusBadge');
 const recordingHint = document.getElementById('recordingHint');
+const analysisGrid = document.getElementById('analysisGrid');
 
 const runtimeApi = (typeof chrome !== 'undefined' && (chrome.runtime || chrome.extension)) || null;
 const inspectedTabId = chrome.devtools?.inspectedWindow?.tabId ?? null;
@@ -157,6 +159,12 @@ stopBtn.onclick = () => {
 
 restartBtn?.addEventListener('click', () => {
   resetPanelState();
+});
+
+layoutToggleBtn?.addEventListener('click', () => {
+  if (!analysisGrid) return;
+  const twoColumn = analysisGrid.classList.toggle('two-column');
+  layoutToggleBtn.textContent = twoColumn ? 'Switch to single-column' : 'Switch to 2-column layout';
 });
 
 jsonBtn.onclick = () => {
