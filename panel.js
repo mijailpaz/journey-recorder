@@ -29,6 +29,7 @@ const liveNetworkCount = document.getElementById('liveNetworkCount');
 const liveNetworkStatus = document.getElementById('liveNetworkStatus');
 const liveNetworkProgress = document.getElementById('liveNetworkProgress');
 const liveNetworkProgressFill = document.getElementById('liveNetworkProgressFill');
+const pointerOverlayToggle = document.getElementById('pointerOverlayToggle');
 const filtersResizeObserver =
   typeof ResizeObserver !== 'undefined' && filtersSectionEl
     ? new ResizeObserver(() => syncColumnHeights())
@@ -56,6 +57,35 @@ const MAX_LIVE_EVENTS = 40;
 const LIVE_CLICK_WINDOW_MS = 10000;
 let liveEvents = [];
 let activeClickWindow = null;
+const POINTER_PREF_KEY = 'jrPointerOverlayEnabled';
+let pointerOverlayEnabled = true;
+
+try {
+  const storedPref = window.localStorage?.getItem(POINTER_PREF_KEY);
+  if (storedPref != null) {
+    pointerOverlayEnabled = storedPref !== 'false';
+  }
+} catch (error) {
+  console.warn('Unable to read pointer preference', error);
+}
+
+if (pointerOverlayToggle) {
+  pointerOverlayToggle.checked = pointerOverlayEnabled;
+  pointerOverlayToggle.addEventListener('change', () => {
+    pointerOverlayEnabled = pointerOverlayToggle.checked;
+    try {
+      window.localStorage?.setItem(POINTER_PREF_KEY, String(pointerOverlayEnabled));
+    } catch (error) {
+      console.warn('Unable to persist pointer preference', error);
+    }
+    syncPointerPreference();
+  });
+}
+
+function syncPointerPreference() {
+  sendRuntimeMessage({ type: 'setPointerPreference', enabled: pointerOverlayEnabled });
+}
+syncPointerPreference();
 
 const FILTER_GROUPS = [
   {
@@ -139,7 +169,7 @@ startBtn.onclick = () => {
   setRecordingState(RecordingState.RECORDING);
   clearTraceData();
   sendRuntimeMessage(
-    { type: 'startRecording', tabId: inspectedTabId },
+    { type: 'startRecording', tabId: inspectedTabId, enablePointer: pointerOverlayEnabled },
     {
       expectResponse: true,
       onResponse: (err) => {

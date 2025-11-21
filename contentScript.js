@@ -1,3 +1,4 @@
+const OVERLAY_HOST_ID = '__journey_recorder_overlay_host';
 const POINTER_STYLE_ID = '__journey_recorder_pointer_style';
 const POINTER_EL_ID = '__journey_recorder_pointer';
 const RIPPLE_CLASS = '__journey_recorder_click_ripple';
@@ -10,10 +11,35 @@ let pointerEnabled = false;
 let pointerEl = null;
 let pointerRaf = null;
 const pointerPosition = { x: 0, y: 0 };
+let overlayHost = null;
+let overlayRoot = null;
+let overlayStyleEl = null;
 let navEl = null;
 
+function ensureOverlayRoot() {
+  if (overlayRoot) return overlayRoot;
+  overlayHost = document.getElementById(OVERLAY_HOST_ID);
+  if (!overlayHost) {
+    overlayHost = document.createElement('div');
+    overlayHost.id = OVERLAY_HOST_ID;
+    Object.assign(overlayHost.style, {
+      position: 'fixed',
+      top: '0',
+      left: '0',
+      width: '100%',
+      height: '100%',
+      pointerEvents: 'none',
+      zIndex: '2147483647'
+    });
+    document.documentElement.appendChild(overlayHost);
+  }
+  overlayRoot = overlayHost.shadowRoot || overlayHost.attachShadow({ mode: 'open' });
+  return overlayRoot;
+}
+
 function ensurePointerStyle() {
-  if (document.getElementById(POINTER_STYLE_ID)) return;
+  const root = ensureOverlayRoot();
+  if (!root || overlayStyleEl) return;
   const style = document.createElement('style');
   style.id = POINTER_STYLE_ID;
   style.textContent = `
@@ -38,25 +64,31 @@ function ensurePointerStyle() {
 
     .${RIPPLE_CLASS} {
       position: fixed;
-      width: 24px;
-      height: 24px;
+      width: 40px;
+      height: 40px;
       border-radius: 999px;
-      border: 2px solid rgba(239, 68, 68, 0.8);
-      background: rgba(239, 68, 68, 0.25);
+      border: 3px solid rgba(239, 68, 68, 0.95);
+      background: rgba(239, 68, 68, 0.4);
       pointer-events: none;
-      transform: translate(-50%, -50%) scale(0.1);
-      animation: jr-pointer-ripple 500ms ease-out forwards;
+      transform: translate(-50%, -50%) scale(0.2);
+      animation: jr-pointer-ripple 650ms ease-out forwards;
       z-index: 2147483646;
+      box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.25), 0 0 15px rgba(239, 68, 68, 0.45);
+      mix-blend-mode: multiply;
     }
 
     @keyframes jr-pointer-ripple {
-      from {
-        opacity: 0.6;
-        transform: translate(-50%, -50%) scale(0.1);
+      0% {
+        opacity: 0.85;
+        transform: translate(-50%, -50%) scale(0.2);
       }
-      to {
+      60% {
+        opacity: 0.4;
+        transform: translate(-50%, -50%) scale(2);
+      }
+      100% {
         opacity: 0;
-        transform: translate(-50%, -50%) scale(2.4);
+        transform: translate(-50%, -50%) scale(3);
       }
     }
 
@@ -121,24 +153,21 @@ function ensurePointerStyle() {
       opacity: 0.95;
     }
   `;
-  document.documentElement.appendChild(style);
+  overlayStyleEl = style;
+  root.appendChild(style);
 }
 
-function getOverlayHost() {
-  return document.body || document.documentElement;
-}
-
-function ensurePointerElement(host) {
-  if (!host) return null;
-  let el = document.getElementById(POINTER_EL_ID);
-  if (!el) {
-    el = document.createElement('div');
-    el.id = POINTER_EL_ID;
+function ensurePointerElement() {
+  const root = ensureOverlayRoot();
+  if (!root) return null;
+  if (!pointerEl) {
+    pointerEl = document.createElement('div');
+    pointerEl.id = POINTER_EL_ID;
   }
-  if (!el.isConnected) {
-    host.appendChild(el);
+  if (!pointerEl.isConnected) {
+    root.appendChild(pointerEl);
   }
-  return el;
+  return pointerEl;
 }
 
 function handlePointerMove(event) {
@@ -167,12 +196,10 @@ function renderPointerPosition() {
 
 function enablePointerOverlay() {
   if (pointerEnabled) return;
-  const host = getOverlayHost();
-  if (!host) return;
   ensurePointerStyle();
-  pointerEl = ensurePointerElement(host);
+  pointerEl = ensurePointerElement();
   pointerEl?.classList.remove('visible');
-  ensureNavBar(host);
+  ensureNavBar();
   showNavBar();
   pointerEnabled = true;
   document.addEventListener('pointermove', handlePointerMove, true);
@@ -198,13 +225,14 @@ function disablePointerOverlay() {
 }
 
 function createRipple(x, y) {
-  const host = getOverlayHost();
-  if (!pointerEnabled || !host) return;
+  if (!pointerEnabled) return;
+  const root = ensureOverlayRoot();
+  if (!root) return;
   const ripple = document.createElement('span');
   ripple.className = RIPPLE_CLASS;
   ripple.style.left = `${x}px`;
   ripple.style.top = `${y}px`;
-  host.appendChild(ripple);
+  root.appendChild(ripple);
   ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
 }
 
@@ -213,7 +241,9 @@ function maybeShowRipple(event) {
   createRipple(event.clientX, event.clientY);
 }
 
-function ensureNavBar(host) {
+function ensureNavBar() {
+  const root = ensureOverlayRoot();
+  if (!root) return;
   if (navEl && navEl.isConnected) return;
   navEl = document.getElementById(NAV_ID);
   if (!navEl) {
@@ -226,7 +256,7 @@ function ensureNavBar(host) {
     `;
   }
   navEl.classList.add('hidden');
-  host?.appendChild(navEl);
+  root.appendChild(navEl);
   attachNavHandlers();
 }
 
@@ -260,6 +290,7 @@ function handleNavDismiss(event) {
   event?.stopPropagation();
   sessionStorage.setItem(NAV_SESSION_KEY, 'hidden');
   hideNavBar();
+  notifyNavDismissed();
 }
 
 function handlePageLoadButtonClick(event) {
@@ -281,10 +312,19 @@ function handlePageLoadButtonClick(event) {
         ts: Date.now()
       }
     });
+    notifyNavDismissed();
   } catch (_) {
     // swallow errors
   } finally {
     window.location.reload();
+  }
+}
+
+function notifyNavDismissed() {
+  try {
+    chrome.runtime?.sendMessage({ type: 'jrNavDismissed' });
+  } catch (error) {
+    console.warn('Unable to notify nav dismissal', error);
   }
 }
 
@@ -295,6 +335,15 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
         enablePointerOverlay();
       } else {
         disablePointerOverlay();
+      }
+    }
+    if (msg?.type === 'jrNavToggle') {
+      if (msg.visible) {
+        sessionStorage.removeItem(NAV_SESSION_KEY);
+        ensureNavBar();
+        showNavBar();
+      } else {
+        hideNavBar();
       }
     }
   });
@@ -354,35 +403,72 @@ function getClickUrlInfo(el) {
   };
 }
 
-document.addEventListener(
-  'click',
-  (event) => {
-    if (navEl && navEl.contains(event.target)) {
-      return;
-    }
-    try {
-      const el = event.target;
-      const urlInfo = getClickUrlInfo(el);
-      chrome.runtime.sendMessage({
-        type: 'addEvent',
-        event: {
-          kind: 'click',
-          selector: getSelector(el),
-          text: (el.innerText || '').trim().substring(0, 80),
-          host: urlInfo.host,
-          path: urlInfo.path,
-          qs: urlInfo.qs,
-          targetUrl: urlInfo.targetUrl,
-          targetHost: urlInfo.targetHost,
-          targetPath: urlInfo.targetPath,
-          targetQs: urlInfo.targetQs,
-          ts: Date.now()
-        }
-      });
-      maybeShowRipple(event);
-    } catch (error) {
-      console.warn('Failed to capture click', error);
-    }
-  },
-  true
-);
+function eventTargetsNav(event) {
+  if (!navEl) return false;
+  const path = typeof event.composedPath === 'function' ? event.composedPath() : null;
+  if (Array.isArray(path) && path.includes(navEl)) {
+    return true;
+  }
+  return navEl.contains(event.target);
+}
+
+function startGlobalListeners() {
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (eventTargetsNav(event)) {
+        return;
+      }
+      try {
+        const el = event.target;
+        const urlInfo = getClickUrlInfo(el);
+        chrome.runtime.sendMessage({
+          type: 'addEvent',
+          event: {
+            kind: 'click',
+            selector: getSelector(el),
+            text: (el.innerText || '').trim().substring(0, 80),
+            host: urlInfo.host,
+            path: urlInfo.path,
+            qs: urlInfo.qs,
+            targetUrl: urlInfo.targetUrl,
+            targetHost: urlInfo.targetHost,
+            targetPath: urlInfo.targetPath,
+            targetQs: urlInfo.targetQs,
+            ts: Date.now()
+          }
+        });
+        maybeShowRipple(event);
+      } catch (error) {
+        console.warn('Failed to capture click', error);
+      }
+    },
+    true
+  );
+}
+
+function initNav() {
+  ensurePointerStyle();
+  ensureNavBar();
+  hideNavBar();
+}
+
+function notifyReady() {
+  try {
+    chrome.runtime?.sendMessage({ type: 'jrPointerReady' });
+  } catch (error) {
+    console.warn('Unable to sync pointer state', error);
+  }
+}
+
+function init() {
+  initNav();
+  startGlobalListeners();
+  notifyReady();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => init());
+} else {
+  init();
+}

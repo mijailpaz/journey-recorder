@@ -6,6 +6,8 @@ let videoStartedAt = null;
 let videoDataUrl = null;
 let recordingTabId = null;
 let recordingSourceTabId = null;
+let pointerPreference = true;
+let navDismissed = false;
 
 function notifyPointerState(enabled, targetTabId = recordingSourceTabId) {
   if (typeof targetTabId !== 'number') return;
@@ -18,10 +20,40 @@ function notifyPointerState(enabled, targetTabId = recordingSourceTabId) {
   );
 }
 
+function notifyNavState(visible, targetTabId = recordingSourceTabId) {
+  if (typeof targetTabId !== 'number') return;
+  chrome.tabs.sendMessage(
+    targetTabId,
+    { type: 'jrNavToggle', visible: Boolean(visible) },
+    () => {
+      void chrome.runtime.lastError;
+    }
+  );
+}
+
+function syncPointerState(targetTabId = recordingSourceTabId) {
+  if (!isRecording || !pointerPreference) {
+    notifyPointerState(false, targetTabId);
+    return;
+  }
+  notifyPointerState(true, targetTabId);
+}
+
+function setPointerPreference(enabled) {
+  const nextValue = Boolean(enabled);
+  if (pointerPreference === nextValue) return;
+  pointerPreference = nextValue;
+  syncPointerState();
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return;
 
   if (msg.type === 'startRecording') {
+    if (typeof msg.enablePointer === 'boolean') {
+      pointerPreference = msg.enablePointer;
+    }
+    navDismissed = false;
     startRecording(msg.tabId)
       .then(() => sendResponse({ ok: true }))
       .catch((error) => {
@@ -34,6 +66,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'stopRecording') {
     stopRecording();
     sendResponse({ ok: true });
+    return true;
+  }
+
+  if (msg.type === 'setPointerPreference') {
+    setPointerPreference(msg.enabled);
+    sendResponse?.({ ok: true });
+    return true;
+  }
+
+  if (msg.type === 'jrPointerReady') {
+    const targetId = sender?.tab?.id;
+    if (typeof targetId === 'number') {
+      if (isRecording && pointerPreference && targetId === recordingSourceTabId) {
+        notifyPointerState(true, targetId);
+      } else {
+        notifyPointerState(false, targetId);
+      }
+      if (isRecording && !navDismissed && targetId === recordingSourceTabId) {
+        notifyNavState(true, targetId);
+      } else {
+        notifyNavState(false, targetId);
+      }
+    }
+    sendResponse?.({ ok: true });
+    return true;
+  }
+
+  if (msg.type === 'jrNavDismissed') {
+    navDismissed = true;
+    const targetId = sender?.tab?.id;
+    notifyNavState(false, targetId);
+    sendResponse?.({ ok: true });
     return true;
   }
 
@@ -90,6 +154,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     recordingTabId = null;
     isRecording = false;
     notifyPointerState(false);
+    notifyNavState(false);
+    navDismissed = false;
     recordingSourceTabId = null;
     return;
   }
@@ -99,6 +165,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     recordingTabId = null;
     isRecording = false;
     notifyPointerState(false);
+    notifyNavState(false);
+    navDismissed = false;
     recordingSourceTabId = null;
     return;
   }
@@ -116,7 +184,12 @@ async function startRecording(tabId) {
   recordingSourceTabId = typeof tabId === 'number' ? tabId : await getActiveTabId();
 
   if (typeof recordingSourceTabId === 'number') {
-    notifyPointerState(true, recordingSourceTabId);
+    syncPointerState(recordingSourceTabId);
+    if (!navDismissed) {
+      notifyNavState(true, recordingSourceTabId);
+    } else {
+      notifyNavState(false, recordingSourceTabId);
+    }
   }
 
   try {
@@ -133,6 +206,8 @@ function stopRecording() {
   if (!isRecording) return;
   isRecording = false;
   notifyPointerState(false);
+  notifyNavState(false);
+  navDismissed = false;
   recordingSourceTabId = null;
   if (recordingTabId) {
     chrome.tabs.sendMessage(recordingTabId, { type: 'stopScreenRecording' }, () => {
@@ -191,6 +266,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
   if (tabId === recordingSourceTabId) {
     notifyPointerState(false, tabId);
+    notifyNavState(false, tabId);
+    navDismissed = false;
     recordingSourceTabId = null;
     if (isRecording) {
       isRecording = false;
@@ -201,6 +278,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (!isRecording || tabId !== recordingSourceTabId) return;
   if (info.status === 'complete') {
-    notifyPointerState(true, tabId);
+    syncPointerState(tabId);
+    if (!navDismissed) {
+      notifyNavState(true, tabId);
+    }
   }
 });
