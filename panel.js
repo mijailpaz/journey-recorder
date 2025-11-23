@@ -1330,6 +1330,9 @@ function generateMermaid(events) {
   events.forEach((event) => {
     if (event.kind === 'click') {
       const label = getClickLabelForMermaid(event);
+      if (event.id !== undefined) {
+        lines.push(`  %%${event.id}`);
+      }
       lines.push(`  User->>WebApp: Click "${sanitize(label)}"`);
       hasOutput = true;
       hasActiveClick = true;
@@ -1343,6 +1346,9 @@ function generateMermaid(events) {
       const requestLine = formatRequestForMermaid(event);
       if (!requestLine) {
         return;
+      }
+      if (event.id !== undefined) {
+        lines.push(`  %%${event.id}`);
       }
       lines.push(`  WebApp->>${requestLine.host}: ${requestLine.description}`);
       if (!requestLine.skipResponse) {
