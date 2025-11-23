@@ -414,6 +414,12 @@
         width: 100%;
         font-family: monospace;
       }
+
+      .helper-text {
+        font-size: 0.85rem;
+        color: #475569;
+        margin: 0;
+      }
     </style>
   </head>
   <body>
@@ -431,6 +437,13 @@
         <input type="checkbox" id="pointerOverlayToggle" checked />
         <span>Show helper cursor during recording</span>
       </label>
+      <label class="toggle">
+        <input type="checkbox" id="payloadCaptureToggle" />
+        <span>Include request/response bodies in exports (fetch &amp; XHR only)</span>
+      </label>
+      <p class="helper-text" id="payloadCaptureHelper">
+        Disabled by default to keep trace files lightweight.
+      </p>
       <div id="liveEventsSection" class="live-events hidden" aria-live="polite">
         <div class="live-events-header">
           <strong>Live clicks</strong>

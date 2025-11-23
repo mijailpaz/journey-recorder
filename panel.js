@@ -34,6 +34,8 @@ const clickSelectionContainer = document.getElementById('clickSelectionContainer
 const clickSelectionList = document.getElementById('clickSelectionList');
 const clickSelectionCount = document.getElementById('clickSelectionCount');
 const pointerOverlayToggle = document.getElementById('pointerOverlayToggle');
+const payloadCaptureToggle = document.getElementById('payloadCaptureToggle');
+const payloadCaptureHelper = document.getElementById('payloadCaptureHelper');
 const filterCountElements = new Map();
 const filtersResizeObserver =
   typeof ResizeObserver !== 'undefined' && filtersSectionEl
@@ -63,7 +65,9 @@ const LIVE_CLICK_WINDOW_MS = 10000;
 let liveEvents = [];
 let activeClickWindow = null;
 const POINTER_PREF_KEY = 'jrPointerOverlayEnabled';
+const PAYLOAD_PREF_KEY = 'jrIncludePayloads';
 let pointerOverlayEnabled = true;
+let payloadCaptureEnabled = false;
 const clickSelectionState = new Map();
 let hasClickSelectionRows = false;
 
@@ -88,6 +92,47 @@ if (pointerOverlayToggle) {
     syncPointerPreference();
   });
 }
+
+function initializePayloadCapturePreference() {
+  if (!payloadCaptureToggle) {
+    return;
+  }
+
+  const applyValue = (value) => {
+    payloadCaptureEnabled = Boolean(value);
+    payloadCaptureToggle.checked = payloadCaptureEnabled;
+    updatePayloadCaptureHelper();
+  };
+
+  try {
+    chrome?.storage?.local?.get([PAYLOAD_PREF_KEY], (result) => {
+      const storedValue = result ? result[PAYLOAD_PREF_KEY] : undefined;
+      applyValue(storedValue);
+    });
+  } catch (error) {
+    console.warn('Unable to read payload preference', error);
+    applyValue(false);
+  }
+
+  payloadCaptureToggle.addEventListener('change', () => {
+    payloadCaptureEnabled = payloadCaptureToggle.checked;
+    try {
+      chrome?.storage?.local?.set({ [PAYLOAD_PREF_KEY]: payloadCaptureEnabled });
+    } catch (error) {
+      console.warn('Unable to persist payload preference', error);
+    }
+    updatePayloadCaptureHelper();
+  });
+}
+
+function updatePayloadCaptureHelper() {
+  if (!payloadCaptureHelper) return;
+  payloadCaptureHelper.textContent = payloadCaptureEnabled
+    ? 'Enabled — JSON exports will include fetch/XHR request and response bodies.'
+    : 'Disabled — exports omit request/response bodies to keep files small.';
+}
+
+initializePayloadCapturePreference();
 
 function syncPointerPreference() {
   sendRuntimeMessage({ type: 'setPointerPreference', enabled: pointerOverlayEnabled });
