@@ -182,7 +182,7 @@ const FILTER_GROUPS = [
     label: 'CORS preflight & cached',
     description: 'OPTIONS requests and 304 responses.',
     defaultEnabled: true,
-    patterns: ['method:^OPTIONS$', 'status:^304$']
+    patterns: ['method:^OPTIONS$']
   }
 ];
 
