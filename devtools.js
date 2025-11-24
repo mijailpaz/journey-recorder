@@ -1,7 +1,9 @@
 chrome.devtools.panels.create('Flow Recorder', '', 'panel.html');
 
 const PAYLOAD_PREF_KEY = 'jrIncludePayloads';
+const JS_LOADING_PREF_KEY = 'jrIncludeJsLoading';
 let capturePayloadsEnabled = false;
+let jsLoadingEnabled = false;
 
 function getRuntimeApi() {
   return (typeof chrome !== 'undefined' && (chrome.runtime || chrome.extension)) || null;
@@ -95,7 +97,26 @@ function initializePayloadCapturePreference() {
   });
 }
 
+function initializeJsLoadingPreference() {
+  try {
+    chrome?.storage?.local?.get([JS_LOADING_PREF_KEY], (result) => {
+      jsLoadingEnabled = Boolean(result?.[JS_LOADING_PREF_KEY]);
+    });
+  } catch (error) {
+    console.warn('Unable to read JS loading preference', error);
+    jsLoadingEnabled = false;
+  }
+
+  chrome?.storage?.onChanged?.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes || !(JS_LOADING_PREF_KEY in changes)) {
+      return;
+    }
+    jsLoadingEnabled = Boolean(changes[JS_LOADING_PREF_KEY]?.newValue);
+  });
+}
+
 initializePayloadCapturePreference();
+initializeJsLoadingPreference();
 
 chrome.devtools.network.onRequestFinished.addListener((request) => {
   try {
@@ -105,7 +126,9 @@ chrome.devtools.network.onRequestFinished.addListener((request) => {
     const tabId = chrome.devtools.inspectedWindow.tabId;
     const resourceType = request._resourceType || request._type || 'other';
     const isApiRequest = resourceType === 'xhr' || resourceType === 'fetch';
-    if (!isApiRequest) {
+    const isScriptRequest = resourceType === 'script';
+    const shouldInclude = isApiRequest || (jsLoadingEnabled && isScriptRequest);
+    if (!shouldInclude) {
       return;
     }
     const shouldCapturePayloads =

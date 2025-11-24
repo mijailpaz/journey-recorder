@@ -36,6 +36,8 @@ const clickSelectionCount = document.getElementById('clickSelectionCount');
 const pointerOverlayToggle = document.getElementById('pointerOverlayToggle');
 const payloadCaptureToggle = document.getElementById('payloadCaptureToggle');
 const payloadCaptureHelper = document.getElementById('payloadCaptureHelper');
+const jsLoadingToggle = document.getElementById('jsLoadingToggle');
+const jsLoadingHelper = document.getElementById('jsLoadingHelper');
 const filterCountElements = new Map();
 const filtersResizeObserver =
   typeof ResizeObserver !== 'undefined' && filtersSectionEl
@@ -66,8 +68,10 @@ let liveEvents = [];
 let activeClickWindow = null;
 const POINTER_PREF_KEY = 'jrPointerOverlayEnabled';
 const PAYLOAD_PREF_KEY = 'jrIncludePayloads';
+const JS_LOADING_PREF_KEY = 'jrIncludeJsLoading';
 let pointerOverlayEnabled = true;
 let payloadCaptureEnabled = false;
+let jsLoadingEnabled = false;
 const clickSelectionState = new Map();
 let hasClickSelectionRows = false;
 
@@ -132,7 +136,47 @@ function updatePayloadCaptureHelper() {
     : 'Disabled — exports omit request/response bodies to keep files small.';
 }
 
+function initializeJsLoadingPreference() {
+  if (!jsLoadingToggle) {
+    return;
+  }
+
+  const applyValue = (value) => {
+    jsLoadingEnabled = Boolean(value);
+    jsLoadingToggle.checked = jsLoadingEnabled;
+    updateJsLoadingHelper();
+  };
+
+  try {
+    chrome?.storage?.local?.get([JS_LOADING_PREF_KEY], (result) => {
+      const storedValue = result ? result[JS_LOADING_PREF_KEY] : undefined;
+      applyValue(storedValue);
+    });
+  } catch (error) {
+    console.warn('Unable to read JS loading preference', error);
+    applyValue(false);
+  }
+
+  jsLoadingToggle.addEventListener('change', () => {
+    jsLoadingEnabled = jsLoadingToggle.checked;
+    try {
+      chrome?.storage?.local?.set({ [JS_LOADING_PREF_KEY]: jsLoadingEnabled });
+    } catch (error) {
+      console.warn('Unable to persist JS loading preference', error);
+    }
+    updateJsLoadingHelper();
+  });
+}
+
+function updateJsLoadingHelper() {
+  if (!jsLoadingHelper) return;
+  jsLoadingHelper.textContent = jsLoadingEnabled
+    ? 'Enabled — JavaScript file loading events will be captured.'
+    : 'Disabled by default — enables tracking of script file loads.';
+}
+
 initializePayloadCapturePreference();
+initializeJsLoadingPreference();
 
 function syncPointerPreference() {
   sendRuntimeMessage({ type: 'setPointerPreference', enabled: pointerOverlayEnabled });
