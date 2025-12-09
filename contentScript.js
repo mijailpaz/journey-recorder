@@ -416,7 +416,68 @@ function eventTargetsNav(event) {
   return navEl.contains(event.target);
 }
 
+let lastSpaUrl = window.location.href;
+
+function sendSpaNavigationEvent(navigationType) {
+  if (!isRecordingActive) return;
+  
+  const newUrl = window.location.href;
+  if (newUrl === lastSpaUrl) return;
+  
+  const previousUrl = lastSpaUrl;
+  lastSpaUrl = newUrl;
+  
+  const urlInfo = parseUrl(newUrl);
+  const previousUrlInfo = parseUrl(previousUrl);
+  
+  try {
+    chrome.runtime?.sendMessage({
+      type: 'addEvent',
+      event: {
+        kind: 'spa-navigation',
+        navigationType,
+        url: newUrl,
+        host: urlInfo.host,
+        path: urlInfo.path,
+        qs: urlInfo.qs,
+        previousUrl,
+        previousHost: previousUrlInfo.host,
+        previousPath: previousUrlInfo.path,
+        previousQs: previousUrlInfo.qs,
+        ts: Date.now()
+      }
+    });
+  } catch (error) {
+    console.warn('Failed to capture SPA navigation', error);
+  }
+}
+
+function setupSpaNavigationTracking() {
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+  
+  history.pushState = function(...args) {
+    originalPushState.apply(this, args);
+    sendSpaNavigationEvent('pushState');
+  };
+  
+  history.replaceState = function(...args) {
+    originalReplaceState.apply(this, args);
+    sendSpaNavigationEvent('replaceState');
+  };
+  
+  window.addEventListener('popstate', () => {
+    sendSpaNavigationEvent('popstate');
+  });
+  
+  window.addEventListener('hashchange', () => {
+    sendSpaNavigationEvent('hashchange');
+  });
+}
+
 function startGlobalListeners() {
+  setupSpaNavigationTracking();
+  
   document.addEventListener(
     'click',
     (event) => {

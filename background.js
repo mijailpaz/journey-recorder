@@ -3,6 +3,23 @@ let events = [];
 let eventCounter = 0;
 
 let videoStartedAt = null;
+
+function parseUrl(urlString) {
+  try {
+    const url = new URL(urlString);
+    return {
+      host: url.host,
+      path: url.pathname,
+      qs: url.search || null
+    };
+  } catch (error) {
+    return {
+      host: null,
+      path: null,
+      qs: null
+    };
+  }
+}
 let videoDataUrl = null;
 let recordingTabId = null;
 let recordingSourceTabId = null;
@@ -307,4 +324,30 @@ chrome.tabs.onUpdated.addListener((tabId, info) => {
       notifyNavState(true, tabId);
     }
   }
+});
+
+chrome.webNavigation.onCommitted.addListener((details) => {
+  if (!isRecording) return;
+  if (details.tabId !== recordingSourceTabId) return;
+  if (details.frameId !== 0) return;
+
+  const urlInfo = parseUrl(details.url);
+  const navEvent = {
+    kind: 'navigation',
+    id: eventCounter++,
+    transitionType: details.transitionType,
+    transitionQualifiers: details.transitionQualifiers || [],
+    url: details.url,
+    host: urlInfo.host,
+    path: urlInfo.path,
+    qs: urlInfo.qs,
+    ts: Date.now()
+  };
+
+  events.push(navEvent);
+
+  chrome.runtime.sendMessage({
+    type: 'liveEvent',
+    event: navEvent
+  });
 });
