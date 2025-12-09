@@ -8,6 +8,7 @@ const NAV_CLOSE_ID = '__journey_recorder_nav_close';
 const NAV_SESSION_KEY = '__journey_recorder_nav_hidden';
 
 let pointerEnabled = false;
+let isRecordingActive = false;
 let pointerEl = null;
 let pointerRaf = null;
 const pointerPosition = { x: 0, y: 0 };
@@ -330,6 +331,9 @@ function notifyNavDismissed() {
 
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type === 'jrRecordingToggle') {
+      isRecordingActive = Boolean(msg.enabled);
+    }
     if (msg?.type === 'jrPointerToggle') {
       if (msg.enabled) {
         enablePointerOverlay();
@@ -416,6 +420,7 @@ function startGlobalListeners() {
   document.addEventListener(
     'click',
     (event) => {
+      if (!isRecordingActive) return;
       if (eventTargetsNav(event)) {
         return;
       }
